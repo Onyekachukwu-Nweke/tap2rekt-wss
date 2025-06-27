@@ -46,11 +46,23 @@ io.on("connection", (socket: Socket) => {
     // Start game if 2 players
     if (Object.keys(matches[matchId].players).length === 2) {
       matches[matchId].state = "countdown";
-      io.to(matchId).emit("update", { type: "countdown_start", countdownTime: 3 });
+      const countdownDuration = 3000; // 3 seconds in ms
+      const countdownStart = Date.now();
+      io.to(matchId).emit("update", {
+        type: "countdown_start",
+        startTime: countdownStart,
+        duration: countdownDuration
+      });
 
       setTimeout(() => {
         matches[matchId].state = "active";
-        io.to(matchId).emit("update", { type: "game_start", duration: 10 });
+        const gameDuration = 30000; // 30 seconds in ms
+        const gameStart = Date.now();
+        io.to(matchId).emit("update", {
+          type: "game_start",
+          startTime: gameStart,
+          duration: gameDuration
+        });
 
         setTimeout(() => {
           matches[matchId].state = "finished";
@@ -65,8 +77,8 @@ io.on("connection", (socket: Socket) => {
             scores,
             winner
           });
-        }, 10000);
-      }, 3000);
+        }, gameDuration);
+      }, countdownDuration);
     }
   });
 
