@@ -1,10 +1,14 @@
 {
   "compilerOptions": {
+    "target": "es2017",
+    "module": "commonjs",
+    "outDir": "./dist",
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
-    "target": "es2015", // or higher
-    "module": "commonjs", // or "esnext" if you use ESM, but "commonjs" is safer for Node on Render
-    "downlevelIteration": true, // fixes Set<string> error
-    "outDir": "./dist"
-  }
+    "downlevelIteration": true,
+    "strict": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true
+  },
+  "include": ["server.ts"]
 }

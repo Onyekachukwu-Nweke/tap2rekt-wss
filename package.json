@@ -1,8 +1,8 @@
 {
-  "type": "module",
+  "type": "commonjs",
   "scripts": {
     "start:dev": "npx ts-node server.ts",
-    "build": "tsc server.ts",
+    "build": "tsc",
     "start": "node dist/server.js"
   },
   "dependencies": {
