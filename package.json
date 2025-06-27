@@ -1,5 +1,10 @@
 {
   "type": "module",
+  "scripts": {
+    "start:dev": "npx ts-node server.ts",
+    "build": "tsc server.ts",
+    "start": "node dist/server.js"
+  },
   "dependencies": {
     "cors": "^2.8.5",
     "express": "^5.1.0",
