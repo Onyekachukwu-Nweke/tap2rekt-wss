@@ -19,10 +19,71 @@ type Match = {
   winner?: string;
 };
 
+type LobbyPlayer = { wallet: string; role: 'creator' | 'opponent'; deposited: boolean };
+type Lobby = {
+  id: string;
+  players: Record<string, LobbyPlayer>;
+  state: "waiting" | "ready";
+  deposits: { creator: boolean; opponent: boolean };
+};
+
+const lobbies: Record<string, Lobby> = {};
+
 const matches: Record<string, Match> = {};
 
 io.on("connection", (socket: Socket) => {
   console.log("Client connected:", socket.id);
+
+  // Join lobby
+  socket.on("join_lobby", ({ lobbyId, wallet, role }) => {
+    if (!lobbies[lobbyId]) {
+      lobbies[lobbyId] = {
+        id: lobbyId,
+        players: {},
+        state: "waiting",
+        deposits: { creator: false, opponent: false }
+      };
+    }
+    lobbies[lobbyId].players[wallet] = { wallet, role, deposited: false };
+    socket.join(lobbyId);
+
+    // Notify all players
+    io.to(lobbyId).emit("lobby_update", {
+      type: "lobby_update",
+      playerCount: Object.keys(lobbies[lobbyId].players).length,
+      status: lobbies[lobbyId].state
+    });
+
+    io.to(lobbyId).emit("player_joined", {
+      type: "player_joined",
+      playerCount: Object.keys(lobbies[lobbyId].players).length,
+      wallet,
+    });
+  });
+
+  // Handle deposit
+  socket.on("deposit_made", ({ lobbyId, wallet }) => {
+    const lobby = lobbies[lobbyId];
+    if (!lobby) return;
+    const role = lobby.players[wallet]?.role;
+    if (!role) return;
+
+    lobby.deposits[role] = true;
+    lobby.players[wallet].deposited = true;
+
+    io.to(lobbyId).emit("deposit_confirmed", {
+      type: "deposit_confirmed",
+      role,
+    });
+
+    // If both deposited, lobby is ready
+    if (lobby.deposits.creator && lobby.deposits.opponent) {
+      lobby.state = "ready";
+      io.to(lobbyId).emit("match_ready", {
+        type: "match_ready"
+      });
+    }
+  });
 
   socket.on("join_match", ({ matchId, wallet }) => {
     if (!matches[matchId]) {
