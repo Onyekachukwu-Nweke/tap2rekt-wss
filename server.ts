@@ -78,81 +78,83 @@ io.on("connection", (socket: Socket) => {
     // If both deposited, lobby is ready and match can start
     if (lobby.deposits.creator && lobby.deposits.opponent) {
       lobby.state = "ready";
-      io.to(lobbyId).emit("match_ready", { type: "match_ready" });
-
-      // Initialize the match and start the countdown
+      
+      // CRITICAL FIX: Emit match_ready with matchId so frontend knows to transition
       const matchId = lobbyId; // Assuming 1:1 mapping
+      io.to(lobbyId).emit("match_ready", { 
+        type: "match_ready",
+        matchId: matchId  // Add this so frontend knows which match to join
+      });
+
+      // Initialize the match
       if (!matches[matchId]) {
         matches[matchId] = {
           id: matchId,
           players: {},
           state: "waiting",
           countdownTime: 3,
-          gameTime: 10,
+          gameTime: 30,  // Fixed: was 10, should be 30 to match frontend
         };
       }
+      
       // Add players from lobby to match
       Object.values(lobby.players).forEach(player => {
-        matches[matchId].players[player.wallet] = { wallet: player.wallet, score: 0, taps: 0 };
+        matches[matchId].players[player.wallet] = { 
+          wallet: player.wallet, 
+          score: 0, 
+          taps: 0 
+        };
       });
 
-      // Start countdown
-      matches[matchId].state = "countdown";
-      const countdownDuration = 3000;
-      const countdownStart = Date.now();
-      io.to(matchId).emit("update", {
-        type: "countdown_start",
-        startTime: countdownStart,
-        duration: countdownDuration
-      });
-
+      // CRITICAL FIX: Don't start countdown immediately
+      // Wait for players to actually join the match room first
+      matches[matchId].state = "waiting";
+      
+      // Give players time to transition to match room
       setTimeout(() => {
-        matches[matchId].state = "active";
-        const gameDuration = 30000;
-        const gameStart = Date.now();
-        io.to(matchId).emit("update", {
-          type: "game_start",
-          startTime: gameStart,
-          duration: gameDuration
-        });
-
-        setTimeout(() => {
-          matches[matchId].state = "finished";
-          const scores = Object.values(matches[matchId].players).map(p => ({
-            wallet: p.wallet,
-            score: p.taps
-          }));
-          const winner = scores.reduce((a, b) => (a.score > b.score ? a : b)).wallet;
-          io.to(matchId).emit("update", {
-            type: "game_end",
-            scores,
-            winner
-          });
-        }, gameDuration);
-      }, countdownDuration);
+        if (matches[matchId] && matches[matchId].state === "waiting") {
+          startMatchCountdown(matchId);
+        }
+      }, 2000); // 2 second delay for transition
     }
   });
 
-  // Join match (for completeness, but match start is now handled by deposit logic)
+  // Join match (players call this after lobby is ready)
   socket.on("join_match", ({ matchId, wallet }) => {
+    console.log(`Player ${wallet} joining match ${matchId}`);
+    
     if (!matches[matchId]) {
+      console.log(`Match ${matchId} not found, creating...`);
       matches[matchId] = {
         id: matchId,
         players: {},
         state: "waiting",
         countdownTime: 3,
-        gameTime: 10
+        gameTime: 30
       };
     }
-    matches[matchId].players[wallet] = { wallet, score: 0, taps: 0 };
+    
+    // Add player if not already in match
+    if (!matches[matchId].players[wallet]) {
+      matches[matchId].players[wallet] = { wallet, score: 0, taps: 0 };
+    }
+    
     socket.join(matchId);
 
-    // Notify all players
+    // Notify all players in match
+    const playerCount = Object.keys(matches[matchId].players).length;
     io.to(matchId).emit("update", {
       type: "player_joined",
-      playerCount: Object.keys(matches[matchId].players).length
+      playerCount: playerCount
     });
-    // Do NOT start the game here anymore!
+
+    console.log(`Match ${matchId} now has ${playerCount} players`);
+
+    // If we have 2 players and match is waiting, start countdown
+    if (playerCount >= 2 && matches[matchId].state === "waiting") {
+      console.log(`Starting countdown for match ${matchId}`);
+      startMatchCountdown(matchId);
+    }
   });
 
   // Handle tap events
@@ -183,6 +185,61 @@ io.on("connection", (socket: Socket) => {
     console.log("Client disconnected:", socket.id);
   });
 });
+
+// Helper function to start match countdown
+function startMatchCountdown(matchId: string) {
+  const match = matches[matchId];
+  if (!match) return;
+
+  console.log(`Starting countdown for match ${matchId}`);
+  match.state = "countdown";
+  
+  const countdownDuration = 3000;
+  const countdownStart = Date.now();
+  
+  io.to(matchId).emit("update", {
+    type: "countdown_start",
+    startTime: countdownStart,
+    duration: countdownDuration
+  });
+
+  setTimeout(() => {
+    if (!matches[matchId]) return;
+    
+    console.log(`Starting game for match ${matchId}`);
+    matches[matchId].state = "active";
+    
+    const gameDuration = 30000; // 30 seconds
+    const gameStart = Date.now();
+    
+    io.to(matchId).emit("update", {
+      type: "game_start",
+      startTime: gameStart,
+      duration: gameDuration
+    });
+
+    setTimeout(() => {
+      if (!matches[matchId]) return;
+      
+      console.log(`Ending game for match ${matchId}`);
+      matches[matchId].state = "finished";
+      
+      const scores = Object.values(matches[matchId].players).map(p => ({
+        wallet: p.wallet,
+        score: p.taps
+      }));
+      
+      const winner = scores.reduce((a, b) => (a.score > b.score ? a : b)).wallet;
+      matches[matchId].winner = winner;
+      
+      io.to(matchId).emit("update", {
+        type: "game_end",
+        scores,
+        winner
+      });
+    }, gameDuration);
+  }, countdownDuration);
+}
 
 server.listen(4000, () => {
   console.log("Socket.io server running on port 4000");
